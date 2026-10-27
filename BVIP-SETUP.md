@@ -5,10 +5,15 @@ Anthropic (Claude Sonnet 5.5)**, publicado em `https://supoclip.barbearia.vip`.
 O backend fica em `https://api.supoclip.barbearia.vip` porque o navegador envia
 os uploads de vídeo diretamente para ele.
 
+O servidor tem uma **RTX 3060 12 GB**: a transcrição roda na GPU com o modelo
+`large-v3` (melhor qualidade, ~10 GB de VRAM; um vídeo de 1 h transcreve em
+poucos minutos).
+
 Arquivos deste repositório usados aqui:
 
 - `docker-compose.override.yml`: frontend em modo produção, senha do Postgres
-  aplicada nos quatro lugares que o compose exige, volume para o modelo Whisper.
+  aplicada nos quatro lugares que o compose exige, volume para o modelo Whisper
+  e reserva da GPU NVIDIA para backend e worker.
 - `deploy/Caddyfile`: proxy reverso com HTTPS automático.
 
 ## 0. Pré-requisitos no servidor
@@ -17,8 +22,22 @@ Arquivos deste repositório usados aqui:
 - Portas 80 e 443 chegando ao servidor (redirecione no roteador se for rede local).
 - DNS: registros `A` para `supoclip.barbearia.vip` e `api.supoclip.barbearia.vip`
   apontando para o IP público do servidor.
-- Hardware: Whisper `medium` em CPU usa ~5 GB de RAM; 8 GB+ e 4 núcleos+ ficam
-  confortáveis. Um vídeo de 60 min leva dezenas de minutos para transcrever em CPU.
+- GPU: driver NVIDIA **580 ou mais novo** (o torch 2.11 da imagem usa CUDA 13) e
+  o `nvidia-container-toolkit`. Instalação no Ubuntu/Debian:
+
+```bash
+# driver (Ubuntu): sudo ubuntu-drivers install   ou   sudo apt install nvidia-driver-580
+nvidia-smi                      # deve listar a RTX 3060 e "CUDA Version: 13.x"
+
+curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list \
+  | sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' \
+  | sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
+sudo apt update && sudo apt install -y nvidia-container-toolkit
+sudo nvidia-ctk runtime configure --runtime=docker
+sudo systemctl restart docker
+docker run --rm --gpus all nvidia/cuda:13.0.0-base-ubuntu24.04 nvidia-smi   # teste
+```
 
 ## 1. Clonar
 
@@ -38,11 +57,12 @@ Edite o `.env` e deixe estas linhas com estes valores (as demais podem ficar
 como no exemplo):
 
 ```env
-# Transcrição local
+# Transcrição local na GPU
 TRANSCRIPTION_PROVIDER=whisper
-WHISPER_MODEL_SIZE=medium
+WHISPER_MODEL_SIZE=large-v3        # ~10 GB de VRAM na RTX 3060; "medium" se faltar VRAM
 TRANSCRIPTION_LANGUAGE=            # vazio = detecta o idioma; "pt" força português
-BACKEND_CPU_ONLY=true              # false só se o servidor tiver GPU NVIDIA (ver §7)
+BACKEND_CPU_ONLY=false             # instala torch com CUDA (a imagem fica ~3 GB maior)
+BACKEND_PLATFORM=linux/amd64
 
 # LLM
 LLM=anthropic:claude-sonnet-5-5
@@ -80,15 +100,22 @@ docker compose up -d --build
 docker compose logs -f backend worker
 ```
 
-A primeira construção baixa torch CPU e dependências (alguns minutos). O
-modelo Whisper (~1,5 GB) é baixado na primeira transcrição e fica no volume
-`whisper_cache`. Confira:
+A primeira construção baixa torch com CUDA e dependências (vários minutos e
+alguns GB). O modelo Whisper `large-v3` (~3 GB) é baixado na primeira
+transcrição e fica no volume `whisper_cache`. Confira:
 
 ```bash
 docker compose ps
 curl -s http://127.0.0.1:8000/health/db        # {"status":"healthy","database":"connected"}
 curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:3107/api/auth/get-session   # 200
+docker compose exec -T worker .venv/bin/python -c "import torch; print(torch.cuda.is_available(), torch.cuda.get_device_name(0))"
+# True NVIDIA GeForce RTX 3060
 ```
+
+Se o último comando imprimir `False`, o worker não enxergou a GPU: confira
+`nvidia-smi` no host, o `nvidia-ctk runtime configure` e se o
+`docker-compose.override.yml` está na raiz do projeto. Durante uma transcrição,
+`nvidia-smi` no host deve mostrar o processo `python` usando VRAM.
 
 Se o `worker` registrar `relation "media_deletions" does not exist` logo após
 subir, é só a ordem de inicialização; o backend cria o esquema e o erro para
@@ -150,24 +177,14 @@ trouxer arquivos novos em `backend/migrations/` ou
 (o `init.sql` só roda na criação do volume do Postgres). Nunca use
 `docker compose down -v`: apaga o banco e os clipes.
 
-## 7. Opcional: GPU NVIDIA
+## 7. GPU: o que já está configurado
 
-Com driver NVIDIA e `nvidia-container-toolkit` instalados, use
-`BACKEND_CPU_ONLY=false` no `.env` e acrescente ao `docker-compose.override.yml`,
-em `backend` e `worker`:
-
-```yaml
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
-```
-
-Depois `docker compose up -d --build backend worker`. O Whisper passa a usar a
-GPU automaticamente.
+O `docker-compose.override.yml` reserva a GPU (`driver: nvidia`, `count: all`)
+para `backend` e `worker`, e `BACKEND_CPU_ONLY=false` faz a imagem instalar o
+torch com CUDA. O Whisper escolhe a GPU sozinho quando ela está disponível;
+não há variável extra. Se um dia precisar voltar para CPU (GPU ocupada por
+outro serviço, por exemplo), use `BACKEND_CPU_ONLY=true`, `WHISPER_MODEL_SIZE=medium`,
+remova os blocos `deploy:` do override e rode `docker compose up -d --build backend worker`.
 
 ## Limites e ressalvas
 

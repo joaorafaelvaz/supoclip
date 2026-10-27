@@ -1,5 +1,6 @@
-# Produção no servidor BVIP (supoclip.barbearia.vip). Carregado automaticamente
-# pelo `docker compose`. Requer Compose v2.24+ (por causa de `!reset`).
+# Produção no servidor BVIP (supoclip.barbearia.vip, RTX 3060 12 GB). Carregado
+# automaticamente pelo `docker compose`. Requer Compose v2.24+ (`!reset`),
+# driver NVIDIA 580+ e nvidia-container-toolkit no host (torch 2.11 usa CUDA 13).
 services:
   frontend:
     # A imagem `runner` já contém o build; sem montar o código-fonte.
@@ -13,12 +14,26 @@ services:
     volumes:
       # Modelo Whisper baixado uma única vez, mesmo após rebuilds.
       - whisper_cache:/root/.cache/whisper
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
 
   worker:
     environment:
       DATABASE_URL: postgresql+asyncpg://supoclip:${POSTGRES_PASSWORD}@postgres:5432/supoclip
     volumes:
       - whisper_cache:/root/.cache/whisper
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
 
   postgres:
     environment:
