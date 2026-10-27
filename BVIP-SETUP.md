@@ -16,7 +16,8 @@ Arquivos deste repositório usados aqui:
   reserva da GPU NVIDIA para backend e worker, e portas locais 18000 (API) e
   13107 (frontend), pois 8000, 3107 e 6379 já são usadas por outros serviços
   do servidor.
-- `deploy/Caddyfile`: proxy reverso com HTTPS automático.
+- `deploy/nginx-supoclip.conf`: blocos do nginx para os dois hosts (o servidor
+  já usa nginx para outros projetos; o certbot acrescenta o HTTPS).
 
 ## 0. Pré-requisitos no servidor
 
@@ -123,28 +124,34 @@ Se o `worker` registrar `relation "media_deletions" does not exist` logo após
 subir, é só a ordem de inicialização; o backend cria o esquema e o erro para
 de aparecer.
 
-## 4. Proxy reverso com HTTPS (Caddy)
+## 4. nginx e HTTPS
+
+O servidor já tem nginx servindo outros projetos; o SupoClip entra como dois
+hosts a mais. O certbot adiciona os certificados Let's Encrypt e o
+redirecionamento para HTTPS.
 
 ```bash
-sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https curl
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
-sudo apt update && sudo apt install -y caddy
+cp deploy/nginx-supoclip.conf /etc/nginx/sites-available/supoclip.conf
+ln -sf /etc/nginx/sites-available/supoclip.conf /etc/nginx/sites-enabled/supoclip.conf
+nginx -t && systemctl reload nginx
 
-sudo cp deploy/Caddyfile /etc/caddy/Caddyfile
-sudo systemctl reload caddy
+apt install -y certbot python3-certbot-nginx      # se ainda não tiver
+certbot --nginx -d supoclip.barbearia.vip -d api.supoclip.barbearia.vip
 ```
 
-Caddy emite os certificados Let's Encrypt sozinho. Teste:
+Teste:
 
 ```bash
 curl -I https://supoclip.barbearia.vip
 curl -s https://api.supoclip.barbearia.vip/health
 ```
 
-Se preferir nginx, os pontos que importam são: `client_max_body_size 4G` e
-`proxy_read_timeout 3600` no host da API, e `proxy_buffering off` para o SSE
-de progresso.
+Pontos que importam nesse arquivo e não devem ser removidos: no host da API,
+`client_max_body_size 4G` (uploads), `proxy_buffering off` (SSE de progresso)
+e `proxy_read_timeout 3600s`; no host do frontend, os cabeçalhos `Upgrade`
+e `Connection` (hot module reload não se aplica em produção, mas o Next.js
+usa websockets em algumas rotas) e `X-Forwarded-Proto` (cookies do Better
+Auth marcados como seguros).
 
 ## 5. Primeira conta e bloqueio de cadastro
 
