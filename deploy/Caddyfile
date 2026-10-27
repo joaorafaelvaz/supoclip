@@ -3,7 +3,7 @@
 
 supoclip.barbearia.vip {
 	encode gzip
-	reverse_proxy 127.0.0.1:3107
+	reverse_proxy 127.0.0.1:13107
 }
 
 api.supoclip.barbearia.vip {
@@ -11,7 +11,7 @@ api.supoclip.barbearia.vip {
 	request_body {
 		max_size 4GB
 	}
-	reverse_proxy 127.0.0.1:8000 {
+	reverse_proxy 127.0.0.1:18000 {
 		# Progresso em tempo real usa SSE; sem buffer e sem timeout de resposta.
 		flush_interval -1
 		transport http {

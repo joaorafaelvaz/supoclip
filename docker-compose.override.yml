@@ -5,10 +5,15 @@ services:
   frontend:
     # A imagem `runner` já contém o build; sem montar o código-fonte.
     volumes: !reset []
+    ports: !reset
+      - "127.0.0.1:13107:3107"
     environment:
       DATABASE_URL: postgresql://supoclip:${POSTGRES_PASSWORD}@postgres:5432/supoclip
 
   backend:
+    # Portas 8000 e 3107 já estão em uso no servidor; o Caddy aponta para estas.
+    ports: !reset
+      - "127.0.0.1:18000:8000"
     environment:
       DATABASE_URL: postgresql+asyncpg://supoclip:${POSTGRES_PASSWORD}@postgres:5432/supoclip
     volumes:

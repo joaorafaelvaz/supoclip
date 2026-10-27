@@ -12,8 +12,10 @@ poucos minutos).
 Arquivos deste repositório usados aqui:
 
 - `docker-compose.override.yml`: frontend em modo produção, senha do Postgres
-  aplicada nos quatro lugares que o compose exige, volume para o modelo Whisper
-  e reserva da GPU NVIDIA para backend e worker.
+  aplicada nos quatro lugares que o compose exige, volume para o modelo Whisper,
+  reserva da GPU NVIDIA para backend e worker, e portas locais 18000 (API) e
+  13107 (frontend), pois 8000, 3107 e 6379 já são usadas por outros serviços
+  do servidor.
 - `deploy/Caddyfile`: proxy reverso com HTTPS automático.
 
 ## 0. Pré-requisitos no servidor
@@ -106,8 +108,8 @@ transcrição e fica no volume `whisper_cache`. Confira:
 
 ```bash
 docker compose ps
-curl -s http://127.0.0.1:8000/health/db        # {"status":"healthy","database":"connected"}
-curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:3107/api/auth/get-session   # 200
+curl -s http://127.0.0.1:18000/health/db        # {"status":"healthy","database":"connected"}
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:13107/api/auth/get-session   # 200
 docker compose exec -T worker .venv/bin/python -c "import torch; print(torch.cuda.is_available(), torch.cuda.get_device_name(0))"
 # True NVIDIA GeForce RTX 3060
 ```
