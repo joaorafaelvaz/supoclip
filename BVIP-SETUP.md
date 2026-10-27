@@ -197,6 +197,13 @@ remova os blocos `deploy:` do override e rode `docker compose up -d --build back
 
 ## Limites e ressalvas
 
+- Transcrições Whisper rodam uma por vez dentro do worker (lock no código):
+  duas tarefas enviadas juntas entram em fila na etapa de transcrição em vez
+  de disputar a VRAM. `WORKER_MAX_JOBS` (padrão 4) limita os jobs simultâneos
+  do worker como um todo, incluindo renderização de clipes.
+- Na primeira transcrição o download do `large-v3` leva 1 a 2 minutos com a
+  tarefa parada em "Generating transcript"; não cancele nem reenvie.
+
 - Vídeos: `MAX_VIDEO_DURATION=5400` (90 min) e `MAX_VIDEO_UPLOAD_BYTES` (4 GB)
   no `.env`.
 - Links do YouTube usam `yt-dlp`; alguns vídeos exigem o sidecar `bgutil`

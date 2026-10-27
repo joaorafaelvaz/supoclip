@@ -11,11 +11,13 @@ services:
       DATABASE_URL: postgresql://supoclip:${POSTGRES_PASSWORD}@postgres:5432/supoclip
 
   backend:
-    # Portas 8000 e 3107 já estão em uso no servidor; o Caddy aponta para estas.
+    # Portas 8000 e 3107 já estão em uso no servidor; o nginx aponta para estas.
     ports: !override
       - "127.0.0.1:18000:8000"
     environment:
       DATABASE_URL: postgresql+asyncpg://supoclip:${POSTGRES_PASSWORD}@postgres:5432/supoclip
+      # Reduz fragmentação de VRAM no PyTorch (recomendado pelo próprio erro de OOM).
+      PYTORCH_CUDA_ALLOC_CONF: expandable_segments:True
     volumes:
       # Modelo Whisper baixado uma única vez, mesmo após rebuilds.
       - whisper_cache:/root/.cache/whisper
@@ -30,6 +32,8 @@ services:
   worker:
     environment:
       DATABASE_URL: postgresql+asyncpg://supoclip:${POSTGRES_PASSWORD}@postgres:5432/supoclip
+      # Reduz fragmentação de VRAM no PyTorch (recomendado pelo próprio erro de OOM).
+      PYTORCH_CUDA_ALLOC_CONF: expandable_segments:True
     volumes:
       - whisper_cache:/root/.cache/whisper
     deploy:

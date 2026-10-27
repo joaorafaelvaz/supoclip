@@ -10,6 +10,7 @@ from ..config import get_config
 import httpx
 import json
 import re
+import threading
 import time
 from .common import (
     ANALYSIS_LONG_UTTERANCE_MAX_DURATION_MS,
@@ -174,8 +175,14 @@ def _assemblyai_speech_models_value(speech_model: str) -> List[str]:
     return ["universal-3-5-pro", "universal-2"]
 
 
+# One Whisper job at a time per process. Concurrent jobs each tried to load
+# their own copy of the model before the cache was populated, and two copies
+# of large-v3 do not fit on a 12 GB GPU (CUDA out of memory).
+_WHISPER_LOCK = threading.Lock()
+
+
 def _get_whisper_model(model_name: str = "base"):
-    """Load and cache a Whisper model by name."""
+    """Load and cache a Whisper model by name. Caller must hold _WHISPER_LOCK."""
     if not _WHISPER_AVAILABLE:
         raise RuntimeError(
             "Whisper is not installed. Install it with: uv add openai-whisper"
@@ -195,14 +202,22 @@ def transcribe_with_whisper(
     ``en_us`` are reduced to the ISO 639-1 base Whisper expects.
     """
     audio_path = _prepare_audio_for_transcription(video_path)
-    model = _get_whisper_model(model_name)
     whisper_language = language.split("_", 1)[0] if language else None
-    logger.info(
-        "Starting Whisper transcription with model: %s (language: %s)",
-        model_name,
-        whisper_language or "auto",
-    )
-    return model.transcribe(str(audio_path), word_timestamps=True, language=whisper_language)
+    if not _WHISPER_LOCK.acquire(blocking=False):
+        logger.info("Waiting for another Whisper transcription to finish")
+        _WHISPER_LOCK.acquire()
+    try:
+        model = _get_whisper_model(model_name)
+        logger.info(
+            "Starting Whisper transcription with model: %s (language: %s)",
+            model_name,
+            whisper_language or "auto",
+        )
+        return model.transcribe(
+            str(audio_path), word_timestamps=True, language=whisper_language
+        )
+    finally:
+        _WHISPER_LOCK.release()
 
 
 def _whisper_result_to_transcript_data(whisper_result: Dict[str, Any]) -> Dict[str, Any]:
