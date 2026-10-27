@@ -39,6 +39,11 @@ services:
     environment:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
 
+  redis:
+    # Só a rede interna do Compose usa o Redis; não ocupar a porta 6379 do host
+    # (outro serviço do servidor já a utiliza).
+    ports: !reset []
+
 volumes:
   whisper_cache:
     driver: local
