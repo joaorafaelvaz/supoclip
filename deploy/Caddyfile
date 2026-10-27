@@ -1,0 +1,22 @@
+# /etc/caddy/Caddyfile no servidor BVIP. Caddy obtém e renova os certificados
+# Let's Encrypt sozinho; as portas 80 e 443 precisam chegar a este servidor.
+
+supoclip.barbearia.vip {
+	encode gzip
+	reverse_proxy 127.0.0.1:3107
+}
+
+api.supoclip.barbearia.vip {
+	# Uploads de vídeo vão do navegador direto para o backend (até 4 GB).
+	request_body {
+		max_size 4GB
+	}
+	reverse_proxy 127.0.0.1:8000 {
+		# Progresso em tempo real usa SSE; sem buffer e sem timeout de resposta.
+		flush_interval -1
+		transport http {
+			read_timeout 1h
+			write_timeout 1h
+		}
+	}
+}

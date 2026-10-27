@@ -1,6 +1,29 @@
-# Local override for the BVIP environment: expose Postgres on localhost so the
-# backend/worker can run natively (uv) against the containerized database.
+# Produção no servidor BVIP (supoclip.barbearia.vip). Carregado automaticamente
+# pelo `docker compose`. Requer Compose v2.24+ (por causa de `!reset`).
 services:
+  frontend:
+    # A imagem `runner` já contém o build; sem montar o código-fonte.
+    volumes: !reset []
+    environment:
+      DATABASE_URL: postgresql://supoclip:${POSTGRES_PASSWORD}@postgres:5432/supoclip
+
+  backend:
+    environment:
+      DATABASE_URL: postgresql+asyncpg://supoclip:${POSTGRES_PASSWORD}@postgres:5432/supoclip
+    volumes:
+      # Modelo Whisper baixado uma única vez, mesmo após rebuilds.
+      - whisper_cache:/root/.cache/whisper
+
+  worker:
+    environment:
+      DATABASE_URL: postgresql+asyncpg://supoclip:${POSTGRES_PASSWORD}@postgres:5432/supoclip
+    volumes:
+      - whisper_cache:/root/.cache/whisper
+
   postgres:
-    ports:
-      - "127.0.0.1:5432:5432"
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+
+volumes:
+  whisper_cache:
+    driver: local
