@@ -1,0 +1,6 @@
+# Local override for the BVIP environment: expose Postgres on localhost so the
+# backend/worker can run natively (uv) against the containerized database.
+services:
+  postgres:
+    ports:
+      - "127.0.0.1:5432:5432"
